@@ -1,0 +1,15 @@
+gradio
+accelerate
+transformers
+invisible-watermark
+huggingface-hub
+hf-transfer
+gradio_imageslider
+compel
+opencv-python
+numpy
+diffusers==0.27.0
+transformers
+safetensors
+hidiffusion==0.1.8
+controlnet-aux @ git+https://github.com/huggingface/controlnet_aux
