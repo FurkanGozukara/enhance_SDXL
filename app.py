@@ -1,4 +1,3 @@
-import spaces
 import gradio as gr
 from gradio_imageslider import ImageSlider
 import torch
@@ -16,6 +15,8 @@ from PIL import Image
 import os
 import time
 import numpy as np
+import sys
+import platform 
 
 IS_SPACES_ZERO = os.environ.get("SPACES_ZERO_GPU", "0") == "1"
 IS_SPACE = os.environ.get("SPACE_ID", None) is not None
@@ -23,11 +24,15 @@ IS_SPACE = os.environ.get("SPACE_ID", None) is not None
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16
 
-LOW_MEMORY = os.getenv("LOW_MEMORY", "0") == "1"
-
 print(f"device: {device}")
 print(f"dtype: {dtype}")
-print(f"low memory: {LOW_MEMORY}")
+
+def open_folder():
+    open_folder_path = os.path.abspath("outputs")
+    if platform.system() == "Windows":
+        os.startfile(open_folder_path)
+    elif platform.system() == "Linux":
+        os.system(f'xdg-open "{open_folder_path}"')
 
 
 model = "stabilityai/stable-diffusion-xl-base-1.0"
@@ -89,7 +94,7 @@ def pad_image(image):
         return new_image
 
 
-@spaces.GPU
+
 def predict(
     input_image,
     prompt,
@@ -139,6 +144,18 @@ def predict(
         eta=1.0,
     )
     print(f"Time taken: {time.time() - last_time}")
+    os.makedirs('outputs', exist_ok=True)
+    
+    # Find the latest available number for saving images
+    existing_files = os.listdir('outputs')
+    existing_numbers = [int(file.split('.')[0].split('_')[1]) for file in existing_files if file.endswith('.png')]
+    latest_number = max(existing_numbers) if existing_numbers else 0
+    
+    image_number = latest_number + 1
+    filename = f'img_{image_number:05d}.png'
+    filepath = os.path.join('outputs', filename)
+    gg = images[0]
+    (images.images[0]).save(filepath)
     return (padded_image, images.images[0]), padded_image, anyline_image
 
 
@@ -153,18 +170,8 @@ css = """
 with gr.Blocks(css=css) as demo:
     gr.Markdown(
         """
-# Enhance This  
-### HiDiffusion SDXL
-
-[HiDiffusion](https://github.com/megvii-research/HiDiffusion) enables higher-resolution image generation.  
-You can upload an initial image and prompt to generate an enhanced version.   
-SDXL Controlnet [TheMistoAI/MistoLine](https://huggingface.co/TheMistoAI/MistoLine)  
-[Duplicate Space](https://huggingface.co/spaces/radames/Enhance-This-HiDiffusion-SDXL?duplicate=true) to avoid the queue.  
-
-<small>
-<b>Notes</b> The author advises against the term "super resolution" because it's more like image-to-image generation than enhancement, but it's still a lot of fun!
-
-</small>
+# Enhance This - [HiDiffusion](https://github.com/megvii-research/HiDiffusion) SDXL - V1
+# Latest version of this APP always on : https://www.patreon.com/posts/104816746
         """,
         elem_id="intro",
     )
@@ -253,6 +260,9 @@ SDXL Controlnet [TheMistoAI/MistoLine](https://huggingface.co/TheMistoAI/MistoLi
             with gr.Row():
                 padded_image = gr.Image(type="pil", label="Padded Image")
                 anyline_image = gr.Image(type="pil", label="Anyline Image")
+            with gr.Row():
+                btn_open_outputs = gr.Button("Open Outputs Folder")
+                btn_open_outputs.click(fn=open_folder)
     inputs = [
         image_input,
         prompt,
@@ -277,7 +287,7 @@ SDXL Controlnet [TheMistoAI/MistoLine](https://huggingface.co/TheMistoAI/MistoLi
         outputs=outputs,
         examples=[
             [
-                "./examples/lara.jpeg",
+                "examples/lara.png",
                 "photography of lara croft 8k high definition award winning",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 5436236241,
@@ -291,7 +301,7 @@ SDXL Controlnet [TheMistoAI/MistoLine](https://huggingface.co/TheMistoAI/MistoLi
                 3,
             ],
             [
-                "./examples/cybetruck.jpeg",
+                "examples/cybetruck.png",
                 "photo of tesla cybertruck futuristic car 8k high definition on a sand dune in mars, future",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 383472451451,
@@ -305,7 +315,7 @@ SDXL Controlnet [TheMistoAI/MistoLine](https://huggingface.co/TheMistoAI/MistoLi
                 3,
             ],
             [
-                "./examples/jesus.png",
+                "examples/jesus.png",
                 "a photorealistic painting of Jesus Christ, 4k high definition",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 13317204146129588000,
@@ -319,7 +329,7 @@ SDXL Controlnet [TheMistoAI/MistoLine](https://huggingface.co/TheMistoAI/MistoLi
                 3,
             ],
             [
-                "./examples/anna-sullivan-DioLM8ViiO8-unsplash.jpg",
+                "examples/anna-sullivan-DioLM8ViiO8-unsplash.png",
                 "A crowded stadium with enthusiastic fans watching a daytime sporting event, the stands filled with colorful attire and the sun casting a warm glow",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 5623124123512,
@@ -333,7 +343,7 @@ SDXL Controlnet [TheMistoAI/MistoLine](https://huggingface.co/TheMistoAI/MistoLi
                 3,
             ],
             [
-                "./examples/img_aef651cb-2919-499d-aa49-6d4e2e21a56e_1024.jpg",
+                "examples/img_aef651cb-2919-499d-aa49-6d4e2e21a56e_1024.png",
                 "a large red flower on a black background 4k high definition",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 23123412341234,
@@ -347,7 +357,7 @@ SDXL Controlnet [TheMistoAI/MistoLine](https://huggingface.co/TheMistoAI/MistoLi
                 3,
             ],
             [
-                "./examples/huggingface.jpg",
+                "examples/huggingface.png",
                 "photo realistic huggingface human emoji costume, round, yellow, (human skin)+++ (human texture)+++",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic, emoji cartoon,  drawing, pixelated",
                 12312353423,
@@ -365,5 +375,5 @@ SDXL Controlnet [TheMistoAI/MistoLine](https://huggingface.co/TheMistoAI/MistoLi
     )
 
 
-demo.queue(api_open=False)
-demo.launch(show_api=False)
+demo.queue()
+demo.launch(inbrowser=True)
