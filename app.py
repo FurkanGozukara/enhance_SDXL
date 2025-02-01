@@ -1,6 +1,7 @@
 import gradio as gr
 from gradio_imageslider import ImageSlider
 import torch
+import random
 
 torch.jit.script = lambda f: f
 from hidiffusion import apply_hidiffusion
@@ -36,12 +37,7 @@ def open_folder():
 
 
 model = "stabilityai/stable-diffusion-xl-base-1.0"
-# model = "stabilityai/sdxl-turbo"
-# vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=dtype)
 scheduler = DDIMScheduler.from_pretrained(model, subfolder="scheduler")
-# controlnet = ControlNetModel.from_pretrained(
-#     "diffusers/controlnet-canny-sdxl-1.0", torch_dtype=torch.float16
-# )
 controlnet = ControlNetModel.from_pretrained(
     "TheMistoAI/MistoLine",
     torch_dtype=torch.float16,
@@ -67,7 +63,6 @@ pipe = pipe.to(device)
 
 if not IS_SPACES_ZERO:
     apply_hidiffusion(pipe)
-    # pipe.enable_xformers_memory_efficient_attention()
     pipe.enable_model_cpu_offload()
 pipe.enable_vae_tiling()
 
@@ -82,17 +77,14 @@ def pad_image(image):
         return image
     elif w > h:
         new_image = Image.new(image.mode, (w, w), (0, 0, 0))
-        pad_w = 0
         pad_h = (w - h) // 2
         new_image.paste(image, (0, pad_h))
         return new_image
     else:
         new_image = Image.new(image.mode, (h, h), (0, 0, 0))
         pad_w = (h - w) // 2
-        pad_h = 0
         new_image.paste(image, (pad_w, 0))
         return new_image
-
 
 
 def predict(
@@ -100,6 +92,8 @@ def predict(
     prompt,
     negative_prompt,
     seed,
+    random_seed,
+    num_inference_steps,
     guidance_scale=8.5,
     scale=2,
     controlnet_conditioning_scale=0.5,
@@ -116,6 +110,10 @@ def predict(
         raise gr.Error("Please upload an image.")
     padded_image = pad_image(input_image).resize((1024, 1024)).convert("RGB")
     conditioning, pooled = compel([prompt, negative_prompt])
+    
+    if random_seed:
+        seed = random.randint(0, 2**32 - 1)
+    
     generator = torch.manual_seed(seed)
     last_time = time.time()
     anyline_image = anyline(
@@ -139,14 +137,13 @@ def predict(
         controlnet_start=float(controlnet_start),
         controlnet_end=float(controlnet_end),
         generator=generator,
-        num_inference_steps=30,
+        num_inference_steps=num_inference_steps,
         guidance_scale=guidance_scale,
         eta=1.0,
     )
     print(f"Time taken: {time.time() - last_time}")
     os.makedirs('outputs', exist_ok=True)
     
-    # Find the latest available number for saving images
     existing_files = os.listdir('outputs')
     existing_numbers = [int(file.split('.')[0].split('_')[1]) for file in existing_files if file.endswith('.png')]
     latest_number = max(existing_numbers) if existing_numbers else 0
@@ -154,9 +151,8 @@ def predict(
     image_number = latest_number + 1
     filename = f'img_{image_number:05d}.png'
     filepath = os.path.join('outputs', filename)
-    gg = images[0]
-    (images.images[0]).save(filepath)
-    return (padded_image, images.images[0]), padded_image, anyline_image
+    images.images[0].save(filepath)
+    return (padded_image, images.images[0]), padded_image, anyline_image, seed
 
 
 css = """
@@ -177,7 +173,7 @@ with gr.Blocks(css=css) as demo:
     )
     with gr.Row():
         with gr.Column(scale=1):
-            image_input = gr.Image(type="pil", label="Input Image")
+            image_input = gr.Image(type="pil", label="Input Image", height=600)
             prompt = gr.Textbox(
                 label="Prompt",
                 info="The prompt is very important to get the desired results. Please try to describe the image as best as you can. Accepts Compel Syntax",
@@ -186,15 +182,23 @@ with gr.Blocks(css=css) as demo:
                 label="Negative Prompt",
                 value="blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
             )
-            seed = gr.Slider(
-                minimum=0,
-                maximum=2**64 - 1,
-                value=1415926535897932,
+            with gr.Row():
+                seed = gr.Slider(
+                    minimum=0,
+                    maximum=2**32 - 1,
+                    value=1415926535,
+                    step=1,
+                    label="Seed",
+                )
+                random_seed = gr.Checkbox(label="Random Seed", value=True)
+            num_inference_steps = gr.Slider(
+                minimum=1,
+                maximum=100,
+                value=30,
                 step=1,
-                label="Seed",
-                randomize=True,
+                label="Number of Inference Steps",
             )
-            with gr.Accordion(label="Advanced", open=False):
+            with gr.Accordion(label="Advanced", open=True):
                 guidance_scale = gr.Slider(
                     minimum=0,
                     maximum=50,
@@ -258,8 +262,8 @@ with gr.Blocks(css=css) as demo:
             with gr.Group():
                 image_slider = ImageSlider(position=0.5)
             with gr.Row():
-                padded_image = gr.Image(type="pil", label="Padded Image")
-                anyline_image = gr.Image(type="pil", label="Anyline Image")
+                padded_image = gr.Image(type="pil", label="Padded Image", height=600)
+                anyline_image = gr.Image(type="pil", label="Anyline Image", height=600)
             with gr.Row():
                 btn_open_outputs = gr.Button("Open Outputs Folder")
                 btn_open_outputs.click(fn=open_folder)
@@ -268,6 +272,8 @@ with gr.Blocks(css=css) as demo:
         prompt,
         negative_prompt,
         seed,
+        random_seed,
+        num_inference_steps,
         guidance_scale,
         scale,
         controlnet_conditioning_scale,
@@ -277,7 +283,7 @@ with gr.Blocks(css=css) as demo:
         guassian_sigma,
         intensity_threshold,
     ]
-    outputs = [image_slider, padded_image, anyline_image]
+    outputs = [image_slider, padded_image, anyline_image, seed]
     btn.click(lambda x: None, inputs=None, outputs=image_slider).then(
         fn=predict, inputs=inputs, outputs=outputs
     )
@@ -291,6 +297,8 @@ with gr.Blocks(css=css) as demo:
                 "photography of lara croft 8k high definition award winning",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 5436236241,
+                False,
+                30,
                 8.5,
                 2,
                 0.8,
@@ -305,6 +313,8 @@ with gr.Blocks(css=css) as demo:
                 "photo of tesla cybertruck futuristic car 8k high definition on a sand dune in mars, future",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 383472451451,
+                False,
+                30,
                 8.5,
                 2,
                 0.8,
@@ -319,6 +329,8 @@ with gr.Blocks(css=css) as demo:
                 "a photorealistic painting of Jesus Christ, 4k high definition",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 13317204146129588000,
+                False,
+                30,
                 8.5,
                 2,
                 0.8,
@@ -333,6 +345,8 @@ with gr.Blocks(css=css) as demo:
                 "A crowded stadium with enthusiastic fans watching a daytime sporting event, the stands filled with colorful attire and the sun casting a warm glow",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 5623124123512,
+                False,
+                30,
                 8.5,
                 2,
                 0.8,
@@ -347,6 +361,8 @@ with gr.Blocks(css=css) as demo:
                 "a large red flower on a black background 4k high definition",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic",
                 23123412341234,
+                False,
+                30,
                 8.5,
                 2,
                 0.8,
@@ -361,6 +377,8 @@ with gr.Blocks(css=css) as demo:
                 "photo realistic huggingface human emoji costume, round, yellow, (human skin)+++ (human texture)+++",
                 "blurry, ugly, duplicate, poorly drawn, deformed, mosaic, emoji cartoon,  drawing, pixelated",
                 12312353423,
+                False,
+                30,
                 15.206,
                 2,
                 0.364,

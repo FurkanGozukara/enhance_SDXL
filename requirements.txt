@@ -1,15 +1,16 @@
-gradio
+gradio==4.44.1
 accelerate
 transformers
 invisible-watermark
-huggingface-hub
+huggingface-hub==0.25.0
 hf-transfer
 gradio_imageslider
 compel
 opencv-python
-numpy
+numpy==1.26.4
 diffusers==0.27.0
 transformers
 safetensors
 hidiffusion==0.1.8
+bitsandbytes
 controlnet-aux @ git+https://github.com/huggingface/controlnet_aux
